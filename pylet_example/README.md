@@ -56,12 +56,12 @@ You should see 1 worker with 2 GPU units available.
 ```bash
 # Python fan
 pylet submit \
-  'python -m sglang.launch_server --model-path Qwen/Qwen3-1.7B --reasoning-parser qwen3 --port $PORT --cuda-graph-max-bs 1' \
+  'python -m sglang.launch_server --model-path Qwen/Qwen3-1.7B --reasoning-parser qwen3 --host 0.0.0.0 --port $PORT --cuda-graph-max-bs 1' \
   --name python-fan --gpu-units 1
 
 # Rust evangelist
 pylet submit \
-  'python -m sglang.launch_server --model-path Qwen/Qwen3-1.7B --reasoning-parser qwen3 --port $PORT --cuda-graph-max-bs 1' \
+  'python -m sglang.launch_server --model-path Qwen/Qwen3-1.7B --reasoning-parser qwen3 --host 0.0.0.0 --port $PORT --cuda-graph-max-bs 1' \
   --name rust-fan --gpu-units 1
 ```
 
@@ -108,8 +108,8 @@ collection pauses.
 ### 5. Clean up
 
 ```bash
-pylet cancel $(pylet get-instance --name python-fan | grep -o '[a-f0-9-]\{36\}')
-pylet cancel $(pylet get-instance --name rust-fan   | grep -o '[a-f0-9-]\{36\}')
+pylet delete --name python-fan -y
+pylet delete --name rust-fan -y
 scancel --name pylet-worker   # release the SLURM GPUs
 ```
 

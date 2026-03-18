@@ -153,6 +153,19 @@ def silu_kernel(x_ptr, y_ptr, n_elements, BLOCK_SIZE: tl.constexpr):
     tl.store(y_ptr + offs, result, mask=mask)
 
 
+@triton.autotune(
+    configs=[
+        triton.Config({'BLOCK_M': 128, 'BLOCK_N': 64, 'BLOCK_K': 32}, num_warps=8, num_stages=3),
+        triton.Config({'BLOCK_M': 64, 'BLOCK_N': 64, 'BLOCK_K': 32}, num_warps=4, num_stages=2),
+        triton.Config({'BLOCK_M': 64, 'BLOCK_N': 128, 'BLOCK_K': 32}, num_warps=4, num_stages=3),
+        triton.Config({'BLOCK_M': 128, 'BLOCK_N': 128, 'BLOCK_K': 32}, num_warps=8, num_stages=4),
+        triton.Config({'BLOCK_M': 64, 'BLOCK_N': 64, 'BLOCK_K': 64}, num_warps=4, num_stages=3),
+        triton.Config({'BLOCK_M': 128, 'BLOCK_N': 64, 'BLOCK_K': 64}, num_warps=8, num_stages=4),
+        triton.Config({'BLOCK_M': 256, 'BLOCK_N': 64, 'BLOCK_K': 32}, num_warps=8, num_stages=4),
+        triton.Config({'BLOCK_M': 64, 'BLOCK_N': 256, 'BLOCK_K': 32}, num_warps=8, num_stages=4),
+    ],
+    key=['M', 'N', 'K'],
+)
 @triton.jit
 def linear_kernel_tf32(
     a_ptr,
@@ -208,6 +221,16 @@ def linear_kernel_tf32(
     )
 
 
+@triton.autotune(
+    configs=[
+        triton.Config({'BLOCK_M': 128, 'BLOCK_N': 64, 'BLOCK_K': 32}, num_warps=8, num_stages=3),
+        triton.Config({'BLOCK_M': 64, 'BLOCK_N': 64, 'BLOCK_K': 32}, num_warps=4, num_stages=2),
+        triton.Config({'BLOCK_M': 64, 'BLOCK_N': 128, 'BLOCK_K': 32}, num_warps=4, num_stages=3),
+        triton.Config({'BLOCK_M': 128, 'BLOCK_N': 128, 'BLOCK_K': 32}, num_warps=8, num_stages=4),
+        triton.Config({'BLOCK_M': 256, 'BLOCK_N': 64, 'BLOCK_K': 32}, num_warps=8, num_stages=4),
+    ],
+    key=['M', 'N', 'K'],
+)
 @triton.jit
 def linear_gelu_kernel(
     a_ptr,
@@ -260,6 +283,16 @@ def linear_gelu_kernel(
     )
 
 
+@triton.autotune(
+    configs=[
+        triton.Config({'BLOCK_M': 128, 'BLOCK_N': 64, 'BLOCK_K': 32}, num_warps=8, num_stages=3),
+        triton.Config({'BLOCK_M': 64, 'BLOCK_N': 64, 'BLOCK_K': 32}, num_warps=4, num_stages=2),
+        triton.Config({'BLOCK_M': 64, 'BLOCK_N': 128, 'BLOCK_K': 32}, num_warps=4, num_stages=3),
+        triton.Config({'BLOCK_M': 128, 'BLOCK_N': 128, 'BLOCK_K': 32}, num_warps=8, num_stages=4),
+        triton.Config({'BLOCK_M': 256, 'BLOCK_N': 64, 'BLOCK_K': 32}, num_warps=8, num_stages=4),
+    ],
+    key=['M', 'N', 'K'],
+)
 @triton.jit
 def swiglu_fused_kernel(
     a_ptr,
@@ -757,9 +790,9 @@ class Linear:
             (M_padded, self._N_padded), dtype=torch.float32, device=x.device
         )
 
-        grid = (
-            triton.cdiv(M_padded, self.TILE_M),
-            triton.cdiv(self._N_padded, self.TILE_N),
+        grid = lambda meta: (
+            triton.cdiv(M_padded, meta['BLOCK_M']),
+            triton.cdiv(self._N_padded, meta['BLOCK_N']),
         )
         linear_kernel_tf32[grid](
             x_padded,
@@ -774,11 +807,6 @@ class Linear:
             self._weight_t_padded.stride(1),
             output.stride(0),
             output.stride(1),
-            BLOCK_M=self.TILE_M,
-            BLOCK_N=self.TILE_N,
-            BLOCK_K=self.TILE_K,
-            num_warps=8,
-            num_stages=3,
         )
 
         output = output[:M, :N]
@@ -867,7 +895,7 @@ def softmax(x: torch.Tensor, axis: int = -1) -> torch.Tensor:
 class MLP:
     """MLP with SwiGLU gating using Triton."""
 
-    FUSED = False
+    FUSED = True
     TILE_M, TILE_N, TILE_K = 64, 64, 32
 
     def __init__(
@@ -959,9 +987,9 @@ class MLP:
             (M_pad, N_pad), dtype=torch.float32, device=x.device
         )
 
-        grid = (
-            triton.cdiv(M_pad, self.TILE_M),
-            triton.cdiv(N_pad, self.TILE_N),
+        grid = lambda meta: (
+            triton.cdiv(M_pad, meta['BLOCK_M']),
+            triton.cdiv(N_pad, meta['BLOCK_N']),
         )
         swiglu_fused_kernel[grid](
             x_padded,
@@ -979,9 +1007,6 @@ class MLP:
             up_w_padded.stride(1),
             intermediate.stride(0),
             intermediate.stride(1),
-            BLOCK_M=self.TILE_M,
-            BLOCK_N=self.TILE_N,
-            BLOCK_K=self.TILE_K,
         )
 
         if M != M_pad or N != N_pad:
@@ -994,7 +1019,7 @@ class MLP:
 class EncoderMLP:
     """Encoder MLP (no gating) using Triton."""
 
-    FUSED = False
+    FUSED = True
     TILE_M, TILE_N, TILE_K = 64, 64, 32
 
     def __init__(
@@ -1065,9 +1090,9 @@ class EncoderMLP:
             (M_pad, N_pad), dtype=torch.float32, device=x.device
         )
 
-        grid = (
-            triton.cdiv(M_pad, self.TILE_M),
-            triton.cdiv(N_pad, self.TILE_N),
+        grid = lambda meta: (
+            triton.cdiv(M_pad, meta['BLOCK_M']),
+            triton.cdiv(N_pad, meta['BLOCK_N']),
         )
         linear_gelu_kernel[grid](
             x_padded,
@@ -1082,9 +1107,6 @@ class EncoderMLP:
             fc1_w_padded.stride(1),
             intermediate.stride(0),
             intermediate.stride(1),
-            BLOCK_M=self.TILE_M,
-            BLOCK_N=self.TILE_N,
-            BLOCK_K=self.TILE_K,
         )
 
         if M != M_pad or N != N_pad:

@@ -658,7 +658,7 @@ def get_activation(name: str):
 class Linear:
     """Linear layer with switchable backend (torch or Triton)."""
 
-    TILE_M = 64
+    TILE_M = 128
     TILE_N = 64
     TILE_K = 32
 
@@ -777,6 +777,8 @@ class Linear:
             BLOCK_M=self.TILE_M,
             BLOCK_N=self.TILE_N,
             BLOCK_K=self.TILE_K,
+            num_warps=8,
+            num_stages=3,
         )
 
         output = output[:M, :N]

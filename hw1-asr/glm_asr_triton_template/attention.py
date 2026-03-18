@@ -66,7 +66,9 @@ def attention_scores_kernel(
         mask=(offs_k[:, None] < seq_k) & (offs_d[None, :] < head_dim),
         other=0.0,
     )
-    scores = tl.sum(k * q[None, :], axis=1) * scale
+    q_fp16 = q.to(tl.float16)
+    k_fp16 = k.to(tl.float16)
+    scores = tl.sum(k_fp16 * q_fp16[None, :], axis=1) * scale
     tl.store(
         scores_ptr + pid_bh * stride_s0 + pid_q * stride_s1 + offs_k * stride_s2,
         scores,
@@ -188,7 +190,9 @@ def attention_output_kernel(
         mask=(offs_k[:, None] < seq_k) & (offs_d[None, :] < head_dim),
         other=0.0,
     )
-    out = tl.sum(v * w[:, None], axis=0)
+    v_fp16 = v.to(tl.float16)
+    w_fp16 = w.to(tl.float16)
+    out = tl.sum(v_fp16 * w_fp16[:, None], axis=0).to(tl.float32)
     tl.store(
         output_ptr + pid_bh * stride_o0 + pid_q * stride_o1 + offs_d * stride_o2,
         out,

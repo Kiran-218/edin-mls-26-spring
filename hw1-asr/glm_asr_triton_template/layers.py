@@ -269,12 +269,14 @@ def linear_gelu_kernel(
             mask=(k + offs_k[:, None] < K) & (offs_n[None, :] < N),
             other=0.0,
         )
-        acc += tl.dot(a, b)
+        a_fp16 = a.to(tl.float16)
+        b_fp16 = b.to(tl.float16)
+        acc += tl.dot(a_fp16, b_fp16, allow_tf32=False)
 
     sqrt_2_over_pi = 0.7978845608028654
     acc3 = acc * acc * acc
     inner = sqrt_2_over_pi * (acc + 0.044715 * acc3)
-    acc = acc * 0.5 * (1.0 + tl.libdevice.tanh(inner))
+    acc = acc * 0.5 * (1.0 + tl.math.tanh(inner))
 
     tl.store(
         c_ptr + offs_m[:, None] * stride_cm + offs_n[None, :] * stride_cn,
@@ -341,9 +343,11 @@ def swiglu_fused_kernel(
             mask=(k + offs_k[:, None] < K) & (offs_n[None, :] < N),
             other=0.0,
         )
-
-        gate_acc += tl.dot(a, gate_w)
-        up_acc += tl.dot(a, up_w)
+        a_fp16 = a.to(tl.float16)
+        gate_w_fp16 = gate_w.to(tl.float16)
+        up_w_fp16 = up_w.to(tl.float16)
+        gate_acc += tl.dot(a_fp16, gate_w_fp16, allow_tf32=False)
+        up_acc += tl.dot(a_fp16, up_w_fp16, allow_tf32=False)
 
     sigmoid = 1.0 / (1.0 + tl.exp(-gate_acc))
     gate_act = gate_acc * sigmoid
